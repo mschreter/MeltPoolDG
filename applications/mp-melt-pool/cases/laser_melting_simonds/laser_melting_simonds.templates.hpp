@@ -258,7 +258,7 @@ namespace MeltPoolDG::Simulation::LaserMeltingSimonds
     const types::boundary_id gas_top_bc                = 4;
     const types::boundary_id gas_inflow_bc             = 5;
     const types::boundary_id gas_outlet_bc             = 6;
-            
+
     std::vector<types::boundary_id> all_bcs = {substrate_bottom_bc, substrate_outflow_wall_bc, substrate_inflow_wall_bc, gas_top_bc, gas_inflow_bc, gas_outlet_bc};
 
     const auto double_eq = [](const Number a, const Number b) { return std::abs(a - b) <= 1e-10; };
@@ -321,7 +321,7 @@ namespace MeltPoolDG::Simulation::LaserMeltingSimonds
                       //{bc, std::make_shared<dealii::Functions::ZeroFunction<dim>>()},
                       //"dirichlet",
                       //"reinitialization");
-                    
+
                   //const Number height = height_gas + height_substrate;
 
                     //AssertThrow((height - width) <= 1e-10 || dim == 1,
@@ -347,7 +347,7 @@ namespace MeltPoolDG::Simulation::LaserMeltingSimonds
               //else
                   //this->attach_boundary_condition(bc, "symmetry", "navier_stokes_u");
             }
-            
+
             //this->attach_boundary_condition(gas_top_bc, "fix_pressure_constant", "navier_stokes_p");
           }
         else
