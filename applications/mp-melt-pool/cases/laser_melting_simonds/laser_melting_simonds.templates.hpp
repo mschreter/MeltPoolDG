@@ -258,6 +258,8 @@ namespace MeltPoolDG::Simulation::LaserMeltingSimonds
     const types::boundary_id gas_top_bc                = 4;
     const types::boundary_id gas_inflow_bc             = 5;
     const types::boundary_id gas_outlet_bc             = 6;
+            
+    std::vector<types::boundary_id> all_bcs = {substrate_bottom_bc, substrate_outflow_wall_bc, substrate_inflow_wall_bc, gas_top_bc, gas_inflow_bc, gas_outlet_bc};
 
     const auto double_eq = [](const Number a, const Number b) { return std::abs(a - b) <= 1e-10; };
 
@@ -301,18 +303,52 @@ namespace MeltPoolDG::Simulation::LaserMeltingSimonds
         if (inflow_velocity == 0 or dim == 1)
           {
             // NS
-            this->attach_boundary_condition(substrate_bottom_bc, "no_slip", "navier_stokes_u");
+            for (const auto bc: all_bcs)
+            {
+              if (true)
+              {
+                  if (bc == gas_top_bc)
+                  {
+                    this->attach_boundary_condition(
+                      {bc, std::make_shared<Functions::ConstantFunction<dim>>(outlet_pressure)},
+                      "open",
+                      "navier_stokes_u");
+                  }
+                  else
+                  {
+                  this->attach_boundary_condition(bc, "no_slip", "navier_stokes_u");
+                  //this->attach_boundary_condition(
+                      //{bc, std::make_shared<dealii::Functions::ZeroFunction<dim>>()},
+                      //"dirichlet",
+                      //"reinitialization");
+                    
+                  //const Number height = height_gas + height_substrate;
 
-            this->attach_boundary_condition(gas_top_bc, "no_slip", "navier_stokes_u");
+                    //AssertThrow((height - width) <= 1e-10 || dim == 1,
+                                //ExcMessage("Epsilon is only defined if a square domain is considered."));
 
-            this->attach_boundary_condition(gas_top_bc, "fix_pressure_constant", "navier_stokes_p");
+                    //const auto min_mesh_size =
+                      //this->parameters.amr.do_amr ?
+                        //height / std::pow(2, this->parameters.amr.max_grid_refinement_level) :
+                        //height / std::pow(2, this->parameters.base.global_refinements);
+                    //const auto eps = eps_prefactor * min_mesh_size;
 
-            this->attach_boundary_condition(gas_inflow_bc, "no_slip", "navier_stokes_u");
-            this->attach_boundary_condition(gas_outlet_bc, "no_slip", "navier_stokes_u");
-            this->attach_boundary_condition(substrate_outflow_wall_bc,
-                                            "no_slip",
-                                            "navier_stokes_u");
-            this->attach_boundary_condition(substrate_inflow_wall_bc, "no_slip", "navier_stokes_u");
+
+                   //auto ls = std::make_shared<InitialLevelSet<dim>>(
+                                             //eps, LevelSet::LevelSetType::smoothed_heaviside);
+
+                    //this->attach_boundary_condition(
+                        //{bc, ls},
+                        //"dirichlet",
+                        //"level_set");
+                  }
+
+              }
+              //else
+                  //this->attach_boundary_condition(bc, "symmetry", "navier_stokes_u");
+            }
+            
+            //this->attach_boundary_condition(gas_top_bc, "fix_pressure_constant", "navier_stokes_p");
           }
         else
           {

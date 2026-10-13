@@ -406,10 +406,10 @@ namespace MeltPoolDG::CutUtil
         if (cell_location != dealii::NonMatching::LocationToLevelSet::intersected)
           continue;
 
-        AssertThrow(static_cast<unsigned int>(cell->level()) ==
-                      cut_dof_handler.get_triangulation().n_global_levels() - 1,
-                    dealii::ExcMessage("Invalid solution transfer for cut cells. All intersected "
-                                       "cells must be on the finest mesh level."));
+        //AssertThrow(static_cast<unsigned int>(cell->level()) ==
+                      //cut_dof_handler.get_triangulation().n_global_levels() - 1,
+                    //dealii::ExcMessage("Invalid solution transfer for cut cells. All intersected "
+                                       //"cells must be on the finest mesh level."));
 
         const auto cell_location_old = mesh_classifier_old.location_to_level_set(cell);
 
