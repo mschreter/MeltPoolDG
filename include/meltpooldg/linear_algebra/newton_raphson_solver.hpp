@@ -32,8 +32,9 @@ namespace MeltPoolDG
     VectorType rhs;
     VectorType solution_update;
 
-    int                iteration_counter = 0;
-    int                linear_iter_acc   = 0;
+    int                iteration_counter     = 0;
+    int                linear_iter_acc       = 0;
+    number             initial_residual_norm = 0.0;
     std::ostringstream str_;
 
   public:
@@ -65,7 +66,7 @@ namespace MeltPoolDG
     set_tolerances_to_alternative_values();
 
     bool
-    is_converged();
+    is_converged(const VectorType &solution);
 
     void
     print_header() const;
