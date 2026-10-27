@@ -29,6 +29,8 @@
 
 #include <algorithm>
 #include <string>
+#include <type_traits>
+#include <variant>
 
 
 namespace MeltPoolDG::Heat
@@ -147,16 +149,6 @@ namespace MeltPoolDG::Heat
                  scratch_data.get_locally_relevant_dofs(heat_cut_dof_idx),
                  dh.get_mpi_communicator());
     };
-  }
-
-  template <int dim, typename number>
-  void
-  HeatCutOperation<dim, number>::register_laser_intensity_function_and_direction(
-    std::shared_ptr<const dealii::Function<dim, number>> laser_intensity_profile_in,
-    const dealii::Tensor<1, dim, number>                &laser_direction_in)
-  {
-    heat_operator->register_laser_intensity_function_and_direction(
-      std::move(laser_intensity_profile_in), laser_direction_in);
   }
 
   template <int dim, typename number>
@@ -507,6 +499,44 @@ namespace MeltPoolDG::Heat
     interface_temperature.update_ghost_values();
   }
 
+  template <int dim, typename number>
+  void
+  HeatCutOperation<dim, number>::reset_heat_sources()
+  {
+    volumetric_heat_source = 0;
+    heat_operator->register_laser_intensity_function_and_direction(nullptr, {});
+  }
+
+  template <int dim, typename number>
+  void
+  HeatCutOperation<dim, number>::add_heat_source(
+    const HeatSourceContribution<dim, number> &heat_source)
+  {
+    std::visit(
+      [&](const auto &contribution) {
+        using T = std::decay_t<decltype(contribution)>;
+        if constexpr (std::is_same_v<T, VolumetricHeatSource<dim, number>>)
+          {
+            (void)contribution;
+            AssertThrow(false,
+                        dealii::ExcMessage(
+                          "The CutFEM heat operator does not support volumetric heat sources, "
+                          "e.g. the laser models volumetric, interface_projection_regularized "
+                          "and RTE. Abort..."));
+          }
+        else if constexpr (std::is_same_v<T, InterfaceHeatFlux<dim, number>>)
+          {
+            AssertThrow(contribution.flux,
+                        dealii::ExcMessage("The CutFEM heat operator requires the interfacial "
+                                           "heat flux as a function. Abort..."));
+            heat_operator->register_laser_intensity_function_and_direction(contribution.flux,
+                                                                           contribution.direction);
+          }
+        else
+          static_assert(sizeof(T) == 0, "Heat source contribution not handled.");
+      },
+      heat_source);
+  }
 
   template <int dim, typename number>
   void

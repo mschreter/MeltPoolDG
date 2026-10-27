@@ -301,19 +301,17 @@ namespace MeltPoolDG
                         heat_operation->get_temperature(),
                         level_set_operation->get_level_set_as_heaviside(),
                         heat_dof_idx);
-                    else if (heat_diffuse_operation)
-                      // only precompute the laser heat source if it's not passed to the CutFEM
-                      // Operator
-                      laser_operation->compute_heat_source(
-                        heat_diffuse_operation->get_heat_source(),
-                        heat_diffuse_operation->get_user_rhs(),
-                        level_set_operation->get_level_set_as_heaviside(),
-                        ls_dof_idx,
-                        heat_no_bc_dof_idx,
-                        heat_quad_idx,
-                        true /* zero_out */,
-                        &level_set_operation->get_normal_vector(),
-                        normal_no_bc_dof_idx);
+                    else
+                      {
+                        heat_operation->reset_heat_sources();
+                        heat_operation->add_heat_source(laser_operation->compute_heat_source(
+                          level_set_operation->get_level_set_as_heaviside(),
+                          ls_dof_idx,
+                          heat_no_bc_dof_idx,
+                          heat_quad_idx,
+                          &level_set_operation->get_normal_vector(),
+                          normal_no_bc_dof_idx));
+                      }
                   }
 
                 // the heat equation will NOT be solved if
@@ -842,7 +840,6 @@ namespace MeltPoolDG
           ls_dof_idx,
           &param.rte,
           true,
-          param.heat.operator_type == Heat::TwoPhaseOperatorType::cut,
           param.material.two_phase_fluid_properties_transition_type !=
             TwoPhaseFluidPropertiesTransitionType::sharp,
           param.output.paraview.print_boundary_id);
@@ -913,11 +910,6 @@ namespace MeltPoolDG
                 vel_dof_idx,
                 &flow_operation->get_velocity(),
                 &flow_operation->get_velocity_old());
-
-              if (laser_operation)
-                heat_cut_operation->register_laser_intensity_function_and_direction(
-                  laser_operation->get_intensity_profile(),
-                  param.laser.template get_beam_direction<dim>());
 
               // Register lambda function that reinits the dealii::MatrixFree class. It's required
               // to adapt the cut operator for a new interface position.

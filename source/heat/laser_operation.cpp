@@ -20,7 +20,6 @@ namespace MeltPoolDG::Heat
     const unsigned int                                        hs_dof_idx_in,
     const RadiativeTransport::RadiativeTransportData<number> *rad_trans_data_in,
     const bool                                                problem_is_melt_pool,
-    const bool                                                heat_is_cut,
     const bool material_two_phase_transition_is_diffuse,
     const bool print_boundary_ids)
     : scratch_data(scratch_data_in)
@@ -80,13 +79,6 @@ namespace MeltPoolDG::Heat
         default:
           AssertThrow(false, ExcNotImplemented());
       }
-
-    // For the CutFEM heat transfer operator, we don't precompute a sharp laser heat source.
-    // Instead, we pass the intensity function to the cut operation, which is then evaluated at the
-    // cut interface.
-    if (heat_is_cut and (laser_data.model == LaserModelType::interface_projection_sharp or
-                         laser_data.model == LaserModelType::interface_projection_sharp_conforming))
-      return;
 
     /*
      * Factory for the laser model
@@ -319,25 +311,67 @@ namespace MeltPoolDG::Heat
     return previous_intensity != laser_intensity;
   }
 
-  /* TODO: add function parameters*/
   template <int dim, typename number>
-  void
-  LaserOperation<dim, number>::compute_heat_source(VectorType            &heat_source,
-                                                   VectorType            &heat_user_rhs,
-                                                   const VectorType      &level_set_as_heaviside,
+  HeatSourceContribution<dim, number>
+  LaserOperation<dim, number>::compute_heat_source(const VectorType      &level_set_as_heaviside,
                                                    const unsigned int     ls_dof_idx,
                                                    const unsigned int     heat_no_bc_dof_idx,
                                                    const unsigned int     heat_quad_idx,
-                                                   const bool             zero_out,
                                                    const BlockVectorType *normal_vector,
                                                    const unsigned int     normal_dof_idx) const
+  {
+    if (laser_data.model == LaserModelType::interface_projection_sharp or
+        laser_data.model == LaserModelType::interface_projection_sharp_conforming)
+      return InterfaceHeatFlux<dim, number>{intensity_profile,
+                                            laser_data.template get_beam_direction<dim>(),
+                                            [this,
+                                             &level_set_as_heaviside,
+                                             ls_dof_idx,
+                                             heat_no_bc_dof_idx,
+                                             heat_quad_idx,
+                                             normal_vector,
+                                             normal_dof_idx](VectorType &rhs) {
+                                              scratch_data.initialize_dof_vector(
+                                                heat_source_buffer, heat_no_bc_dof_idx);
+                                              compute_heat_source_vector(heat_source_buffer,
+                                                                         level_set_as_heaviside,
+                                                                         ls_dof_idx,
+                                                                         heat_no_bc_dof_idx,
+                                                                         heat_quad_idx,
+                                                                         normal_vector,
+                                                                         normal_dof_idx);
+                                              rhs += heat_source_buffer;
+                                              if (rhs.has_ghost_elements())
+                                                rhs.update_ghost_values();
+                                            }};
+
+    scratch_data.initialize_dof_vector(heat_source_buffer, heat_no_bc_dof_idx);
+    compute_heat_source_vector(heat_source_buffer,
+                               level_set_as_heaviside,
+                               ls_dof_idx,
+                               heat_no_bc_dof_idx,
+                               heat_quad_idx,
+                               normal_vector,
+                               normal_dof_idx);
+    return VolumetricHeatSource<dim, number>{heat_source_buffer};
+  }
+
+  template <int dim, typename number>
+  void
+  LaserOperation<dim, number>::compute_heat_source_vector(VectorType        &heat_source,
+                                                          const VectorType  &level_set_as_heaviside,
+                                                          const unsigned int ls_dof_idx,
+                                                          const unsigned int heat_no_bc_dof_idx,
+                                                          const unsigned int heat_quad_idx,
+                                                          const BlockVectorType *normal_vector,
+                                                          const unsigned int normal_dof_idx) const
   {
     switch (laser_data.model)
       {
           case LaserModelType::volumetric: {
             Assert(laser_heat_source_operation_volumetric != nullptr, ExcInternalError());
             laser_heat_source_operation_volumetric->compute_volumetric_heat_source(
-              heat_source, scratch_data, heat_no_bc_dof_idx, zero_out);
+              heat_source, scratch_data, heat_no_bc_dof_idx, true /*zero_out*/);
             break;
           }
           case LaserModelType::interface_projection_regularized: {
@@ -348,7 +382,7 @@ namespace MeltPoolDG::Heat
               heat_no_bc_dof_idx,
               level_set_as_heaviside,
               ls_dof_idx,
-              zero_out,
+              true /*zero_out*/,
               normal_vector,
               normal_dof_idx);
             break;
@@ -356,12 +390,12 @@ namespace MeltPoolDG::Heat
           case LaserModelType::interface_projection_sharp: {
             Assert(laser_heat_source_operation_projection != nullptr, ExcInternalError());
             laser_heat_source_operation_projection->compute_interfacial_heat_source_sharp(
-              heat_user_rhs,
+              heat_source,
               scratch_data,
               heat_no_bc_dof_idx,
               level_set_as_heaviside,
               ls_dof_idx,
-              zero_out,
+              true /*zero_out*/,
               normal_vector,
               normal_dof_idx);
             break;
@@ -369,13 +403,13 @@ namespace MeltPoolDG::Heat
           case LaserModelType::interface_projection_sharp_conforming: {
             Assert(laser_heat_source_operation_projection != nullptr, ExcInternalError());
             laser_heat_source_operation_projection
-              ->compute_interfacial_heat_source_sharp_conforming(heat_user_rhs,
+              ->compute_interfacial_heat_source_sharp_conforming(heat_source,
                                                                  scratch_data,
                                                                  heat_no_bc_dof_idx,
                                                                  heat_quad_idx,
                                                                  level_set_as_heaviside,
                                                                  ls_dof_idx,
-                                                                 zero_out,
+                                                                 true /*zero_out*/,
                                                                  normal_vector,
                                                                  normal_dof_idx);
             break;
@@ -383,7 +417,7 @@ namespace MeltPoolDG::Heat
           case LaserModelType::RTE: {
             Assert(rte_operation != nullptr, ExcInternalError());
             rte_operation->solve();
-            rte_operation->compute_heat_source(heat_source, heat_no_bc_dof_idx, zero_out);
+            rte_operation->compute_heat_source(heat_source, heat_no_bc_dof_idx, true /*zero_out*/);
             break;
           }
           default: {

@@ -6,6 +6,7 @@
 #include <deal.II/lac/la_parallel_vector.h>
 
 #include <meltpooldg/core/scratch_data.hpp>
+#include <meltpooldg/heat/heat_source_contribution.hpp>
 #include <meltpooldg/level_set/nearest_point_data.hpp>
 #include <meltpooldg/post_processing/generic_data_out.hpp>
 
@@ -51,6 +52,21 @@ namespace MeltPoolDG::Heat
 
     virtual void
     compute_interface_temperature() = 0;
+
+    /**
+     * Zero out all heat source contributions. This function should be called once per time step
+     * before any heat source is added via add_heat_source().
+     */
+    virtual void
+    reset_heat_sources() = 0;
+
+    /**
+     * Add the heat source contribution @p heat_source, e.g. from a laser, for the current time
+     * step. An exception is thrown if the type of contribution is not supported by the heat
+     * operator.
+     */
+    virtual void
+    add_heat_source(const HeatSourceContribution<dim, number> &heat_source) = 0;
 
     /**
      * register vectors for adaptive mesh refinement solution transfer

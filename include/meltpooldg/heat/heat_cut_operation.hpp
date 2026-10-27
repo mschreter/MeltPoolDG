@@ -120,11 +120,6 @@ namespace MeltPoolDG::Heat
       const VectorType  *velocity_in     = nullptr,
       const VectorType  *velocity_old_in = nullptr);
 
-    void
-    register_laser_intensity_function_and_direction(
-      std::shared_ptr<const dealii::Function<dim, number>> laser_intensity_profile_in,
-      const dealii::Tensor<1, dim, number>                &laser_direction_in);
-
     /**
      * Before this operator can adapt_to_new_interface_position(), attach the following lambdas:
      * @param setup_dof_system_in same as in AMR::refine_grid()
@@ -179,6 +174,12 @@ namespace MeltPoolDG::Heat
 
     void
     compute_interface_temperature() override;
+
+    void
+    reset_heat_sources() override;
+
+    void
+    add_heat_source(const HeatSourceContribution<dim, number> &heat_source) override;
 
     /**
      * register vectors for adaptive mesh refinement solution transfer

@@ -154,6 +154,12 @@ namespace MeltPoolDG::Heat
     compute_interface_temperature() override;
 
     void
+    reset_heat_sources() override;
+
+    void
+    add_heat_source(const HeatSourceContribution<dim, number> &heat_source_in) override;
+
+    void
     attach_vectors(std::vector<VectorType *> &vectors) override;
 
     void

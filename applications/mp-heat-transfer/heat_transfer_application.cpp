@@ -74,7 +74,7 @@ namespace MeltPoolDG::Heat
 
             // heat source
             // zero out
-            heat_operation->get_heat_source() = 0;
+            heat_operation->reset_heat_sources();
             // add custom source field if given
             if (const auto source_field_function = simulation_case->get_field_function(
                   "prescribed_heat_source", "heat_transfer", true /*is_optional*/))
@@ -85,21 +85,11 @@ namespace MeltPoolDG::Heat
             if (laser_operation)
               {
                 laser_operation->move_laser(dt);
-
-                // only precompute the laser heat source if it's not passed to the CutFEM Operator
-                if (simulation_case->parameters.heat.operator_type != TwoPhaseOperatorType::cut)
-                  {
-                    auto heat_diffuse_operation =
-                      dynamic_cast<HeatDiffuseOperation<dim, number> *>(heat_operation.get());
-                    Assert(heat_diffuse_operation != nullptr, dealii::ExcInternalError());
-                    laser_operation->compute_heat_source(heat_diffuse_operation->get_heat_source(),
-                                                         heat_diffuse_operation->get_user_rhs(),
-                                                         level_set_as_heaviside,
-                                                         level_set_dof_idx,
-                                                         heat_continuous_no_bc_dof_idx,
-                                                         heat_quad_idx,
-                                                         false /* zero_out */);
-                  }
+                heat_operation->add_heat_source(
+                  laser_operation->compute_heat_source(level_set_as_heaviside,
+                                                       level_set_dof_idx,
+                                                       heat_continuous_no_bc_dof_idx,
+                                                       heat_quad_idx));
               }
 
             Journal::print_formatted_norm<number>(
@@ -181,7 +171,6 @@ namespace MeltPoolDG::Heat
           level_set_dof_idx,
           &param.rad_trans,
           false,
-          param.heat.operator_type != TwoPhaseOperatorType::cut,
           param.material.two_phase_fluid_properties_transition_type !=
             TwoPhaseFluidPropertiesTransitionType::sharp,
           param.output.paraview.print_boundary_id);
@@ -278,11 +267,6 @@ namespace MeltPoolDG::Heat
               velocity_dof_idx,
               velocity_ptr,
               velocity_old_ptr);
-
-            if (laser_operation)
-              heat_cut_operation->register_laser_intensity_function_and_direction(
-                laser_operation->get_intensity_profile(),
-                param.laser.template get_beam_direction<dim>());
 
             heat_cut_operation->register_lambdas_for_solution_transfer(
               [this]() {

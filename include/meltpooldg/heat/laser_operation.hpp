@@ -10,6 +10,7 @@
 
 #include <meltpooldg/core/finite_element_data.hpp>
 #include <meltpooldg/core/scratch_data.hpp>
+#include <meltpooldg/heat/heat_source_contribution.hpp>
 #include <meltpooldg/heat/laser_data.hpp>
 #include <meltpooldg/heat/laser_heat_source_projection_based.hpp>
 #include <meltpooldg/heat/laser_heat_source_volumetric.hpp>
@@ -64,6 +65,9 @@ namespace MeltPoolDG::Heat
     unsigned int rte_hanging_nodes_dof_idx;
     unsigned int rte_quad_idx;
 
+    // buffer for the heat source computed by the laser model
+    mutable VectorType heat_source_buffer;
+
   public:
     LaserOperation(
       ScratchData<dim, dim, number>                            &scratch_data_in,
@@ -73,7 +77,6 @@ namespace MeltPoolDG::Heat
       const unsigned int                                        hs_dof_idx_in        = 0,
       const RadiativeTransport::RadiativeTransportData<number> *rad_trans_data_in    = nullptr,
       const bool                                                problem_is_melt_pool = false,
-      const bool                                                heat_is_cut          = false,
       const bool material_two_phase_transition_is_diffuse                            = false,
       const bool print_boundary_ids                                                  = false);
 
@@ -96,27 +99,29 @@ namespace MeltPoolDG::Heat
     attach_output_vectors(GenericDataOut<dim, number> &data_out) const;
 
     /**
-     * Compute either the @p heat_source vector (for LaserImpactType::interface and
-     * LaserImpactType::volumetric) or @p heat_user_rhs (for LaserImpactType::interface_sharp),
-     * which is the weak form of the heat_source, both with the DoF layout provided
-     * by @p heat_no_bc_dof_idx. The input parameter comprise the
-     * level set indicator, @p level_set_as_heaviside and the corresponding
-     * index of the DoFHandler @p ls_dof_idx.
+     * Compute the laser heat source of the current time step, which is passed to
+     * HeatOperationBase::add_heat_source(). Depending on the laser model, the contribution is
+     *  - a volumetric heat source (for LaserModelType::volumetric,
+     *    LaserModelType::interface_projection_regularized and LaserModelType::RTE), computed
+     *    with the DoF layout provided by @p heat_no_bc_dof_idx, or
+     *  - an interfacial heat flux (for LaserModelType::interface_projection_sharp and
+     *    LaserModelType::interface_projection_sharp_conforming), given by the intensity profile
+     *    and the beam direction. Its weak form is computed on request with the DoF layout
+     *    provided by @p heat_no_bc_dof_idx and the quadrature rule @p heat_quad_idx.
      *
-     * The optional parameter @p zero_out specifies whether to clear out the to be filled
-     * vector @p heat_source or @p heat_user_rhs. Optionally, a normal vector field can
-     * be provided by @p normal_vector and @p normal_dof_idx. Alternatively,
-     * the unit normal to the surface will be computed by the gradient of
-     * @p level_set_as_heaviside.
+     * The input parameters comprise the level set indicator, @p level_set_as_heaviside and the
+     * corresponding index of the DoFHandler @p ls_dof_idx. Optionally, a normal vector field can
+     * be provided by @p normal_vector and @p normal_dof_idx. Alternatively, the unit normal to
+     * the surface will be computed by the gradient of @p level_set_as_heaviside.
+     *
+     * @note The returned contribution references the input vectors and internal data of this
+     * class. It is only valid until this function is called again.
      */
-    void
-    compute_heat_source(VectorType            &heat_source,
-                        VectorType            &heat_user_rhs,
-                        const VectorType      &level_set_as_heaviside,
+    HeatSourceContribution<dim, number>
+    compute_heat_source(const VectorType      &level_set_as_heaviside,
                         const unsigned int     ls_dof_idx,
                         const unsigned int     heat_no_bc_dof_idx,
                         const unsigned int     heat_quad_idx,
-                        const bool             zero_out       = false,
                         const BlockVectorType *normal_vector  = nullptr,
                         const unsigned int     normal_dof_idx = 0) const;
 
@@ -152,6 +157,20 @@ namespace MeltPoolDG::Heat
     get_intensity_profile() const;
 
   private:
+    /**
+     * Compute the laser heat source vector @p heat_source, which is zeroed out in advance.
+     * Depending on the laser model, @p heat_source is a volumetric heat source field or the weak
+     * form of the interfacial heat flux. For the remaining parameters, see compute_heat_source().
+     */
+    void
+    compute_heat_source_vector(VectorType            &heat_source,
+                               const VectorType      &level_set_as_heaviside,
+                               const unsigned int     ls_dof_idx,
+                               const unsigned int     heat_no_bc_dof_idx,
+                               const unsigned int     heat_quad_idx,
+                               const BlockVectorType *normal_vector,
+                               const unsigned int     normal_dof_idx) const;
+
     /**
      * Print info on current laser features.
      */

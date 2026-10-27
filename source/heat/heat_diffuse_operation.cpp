@@ -15,6 +15,8 @@
 #include <meltpooldg/utilities/scoped_name.hpp>
 #include <meltpooldg/utilities/vector_tools.hpp>
 
+#include <type_traits>
+#include <variant>
 
 namespace MeltPoolDG::Heat
 {
@@ -334,6 +336,41 @@ namespace MeltPoolDG::Heat
                                                            get_temperature());
 
     scratch_data.get_constraint(heat_no_bc_dof_idx).distribute(interface_temperature);
+  }
+
+  template <int dim, typename number>
+  void
+  HeatDiffuseOperation<dim, number>::reset_heat_sources()
+  {
+    heat_source = 0;
+    user_rhs    = 0;
+  }
+
+  template <int dim, typename number>
+  void
+  HeatDiffuseOperation<dim, number>::add_heat_source(
+    const HeatSourceContribution<dim, number> &heat_source_in)
+  {
+    std::visit(
+      [&](const auto &contribution) {
+        using T = std::decay_t<decltype(contribution)>;
+        if constexpr (std::is_same_v<T, VolumetricHeatSource<dim, number>>)
+          {
+            heat_source += contribution.field;
+            if (heat_source.has_ghost_elements())
+              heat_source.update_ghost_values();
+          }
+        else if constexpr (std::is_same_v<T, InterfaceHeatFlux<dim, number>>)
+          {
+            AssertThrow(contribution.add_weak_form,
+                        ExcMessage("The diffuse heat operator requires the weak form of the "
+                                   "interfacial heat flux, which is not provided. Abort..."));
+            contribution.add_weak_form(user_rhs);
+          }
+        else
+          static_assert(sizeof(T) == 0, "Heat source contribution not handled.");
+      },
+      heat_source_in);
   }
 
   template <int dim, typename number>
