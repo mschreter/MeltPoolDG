@@ -1,0 +1,50 @@
+------------------------------------------------------------------
+ START TEST: type closest_point_normal #refine 6 degree 1 dim 2
+------------------------------------------------------------------
+with normal vector
+  max distance to analytical solution (relative): 0.007773
+  extended values exact: yes
+without normal vector
+  max distance to analytical solution (relative): 0.01103
+  extended values exact: yes
+max distance between projected points with/without normal vector (relative): 0.007841
+------------------------------------------------------------------
+ START TEST: type closest_point_normal_collinear #refine 6 degree 2 dim 2
+------------------------------------------------------------------
+with normal vector
+  max distance to analytical solution (relative): 7.399e-05
+  extended values exact: yes
+without normal vector
+  max distance to analytical solution (relative): 0.00416
+  extended values exact: yes
+max distance between projected points with/without normal vector (relative): 0.004158
+------------------------------------------------------------------
+ START TEST: type closest_point_normal_collinear_coquerelle #refine 6 degree 2 dim 2
+------------------------------------------------------------------
+with normal vector
+  max distance to analytical solution (relative): 7.399e-05
+  extended values exact: yes
+without normal vector
+  max distance to analytical solution (relative): 0.00416
+  extended values exact: yes
+max distance between projected points with/without normal vector (relative): 0.004158
+------------------------------------------------------------------
+ START TEST: type closest_point_normal #refine 4 degree 1 dim 3
+------------------------------------------------------------------
+with normal vector
+  max distance to analytical solution (relative): 0.06091
+  extended values exact: yes
+without normal vector
+  max distance to analytical solution (relative): 0.06343
+  extended values exact: yes
+max distance between projected points with/without normal vector (relative): 0.02406
+------------------------------------------------------------------
+ START TEST: type closest_point_normal_collinear_coquerelle #refine 4 degree 2 dim 3
+------------------------------------------------------------------
+with normal vector
+  max distance to analytical solution (relative): 0.001625
+  extended values exact: yes
+without normal vector
+  max distance to analytical solution (relative): 0.01001
+  extended values exact: yes
+max distance between projected points with/without normal vector (relative): 0.009943

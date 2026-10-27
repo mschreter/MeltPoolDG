@@ -61,6 +61,10 @@ namespace MeltPoolDG::LevelSet::Tools
    *   collinear to the interface.
    * - @p closest_point_normal_collinear_coquerelle: Variant using the algorithm from
    *   Coquerelle and Glockner (2014), designed to preserve collinearity.
+   *
+   * For @p nearest_point_fast, the point cloud representing the interface can alternatively be
+   * provided by the user together with the values to be extended (see reinit() and
+   * extend_interface_values() taking interface points/values).
    */
   template <int dim, typename number>
   class NearestPoint
@@ -91,6 +95,24 @@ namespace MeltPoolDG::LevelSet::Tools
                  std::optional<std::reference_wrapper<dealii::TimerOutput>> timer_output = {});
 
     /**
+     * @brief Constructor without a normal vector field.
+     *
+     * Same as above, but the normal direction required by the closest point algorithms is
+     * computed from the gradient of @p signed_distance.
+     *
+     * @note For a linear level set function, the gradient is discontinuous between cells, which
+     * may prevent the convergence of the tangential correction of
+     * @p closest_point_normal_collinear and @p closest_point_normal_collinear_coquerelle. In this
+     * case, a (smooth) normal vector field should be provided.
+     */
+    NearestPoint(const dealii::Mapping<dim>    &mapping,
+                 const dealii::DoFHandler<dim> &dof_handler_signed_distance,
+                 const VectorType              &signed_distance,
+                 dealii::Utilities::MPI::RemotePointEvaluation<dim, dim>   &remote_point_evaluation,
+                 const NearestPointData<number>                            &nearest_point_data,
+                 std::optional<std::reference_wrapper<dealii::TimerOutput>> timer_output = {});
+
+    /**
      * @brief Initialize projection by computing nearest points for each DoF in the given DoFHandler.
      *
      * This function performs the projection of nodal locations from @p dof_handler_src_in to the
@@ -107,6 +129,24 @@ namespace MeltPoolDG::LevelSet::Tools
     void
     reinit(const dealii::DoFHandler<dim> *dof_handler_src_in,
            const dealii::DoFHandler<dim> *dof_handler_dst_in = nullptr);
+
+    /**
+     * @brief Initialize projection to a user-provided point cloud representing the interface.
+     *
+     * Instead of reconstructing the interface from the level set function, the nearest point
+     * of each DoF of @p dof_handler within the narrow band is searched among @p interface_points.
+     * Values at these points are subsequently extended via the overload of
+     * extend_interface_values() taking interface values.
+     *
+     * @note Only supported for @p nearest_point_fast. This function is collective; each process
+     * may provide an arbitrary (also empty) subset of the interface points.
+     *
+     * @param dof_handler DoFHandler of the vector to be filled; must not be set up for CutFEM.
+     * @param interface_points Locally provided points on the interface.
+     */
+    void
+    reinit(const dealii::DoFHandler<dim>         &dof_handler,
+           const std::vector<dealii::Point<dim>> &interface_points);
 
     /**
      * @brief Populate a DoF vector with values from the interface.
@@ -128,6 +168,28 @@ namespace MeltPoolDG::LevelSet::Tools
     void
     extend_interface_values(VectorType                                &solution_out,
                             const VectorType                          &solution_in,
+                            const bool                                 zero_out  = true,
+                            const std::function<number(const number)> &operation = {}) const;
+
+    /**
+     * @brief Populate a DoF vector with user-provided values at the interface points.
+     *
+     * Same as above, but the values are given at the interface points passed to reinit().
+     *
+     * @note You must call reinit() with interface points before.
+     *
+     * @tparam n_components Number of components (default is 1).
+     * @param solution_out Output vector to write interface values into.
+     * @param interface_values Values at the locally provided interface points, in the same order as
+     * the points and with the components of each point stored contiguously, i.e.
+     * [p0_c0, p0_c1, ..., p1_c0, ...].
+     * @param zero_out Whether to zero the output vector before writing.
+     * @param operation Optional function applied to each value.
+     */
+    template <int n_components = 1>
+    void
+    extend_interface_values(VectorType                                &solution_out,
+                            const dealii::ArrayView<const number>     &interface_values,
                             const bool                                 zero_out  = true,
                             const std::function<number(const number)> &operation = {}) const;
 
@@ -184,8 +246,8 @@ namespace MeltPoolDG::LevelSet::Tools
     const VectorType &signed_distance;
 
     /// Optional vector containing the interface normals at DoFs (used for projection direction or
-    /// correction)
-    const BlockVectorType &normal_vector;
+    /// correction). If nullptr, the gradient of the signed distance function is used.
+    const BlockVectorType *normal_vector;
 
     /// Parameters controlling the nearest point projection (e.g., tolerance, contour value,
     /// subdivisions, etc.)
@@ -246,6 +308,10 @@ namespace MeltPoolDG::LevelSet::Tools
     /// methods)
     bool input_vector_is_cut = false;
 
+    /// Indicates whether the interface points were provided by the user via reinit() instead of
+    /// being reconstructed from the level set function
+    bool interface_points_from_user = false;
+
     // --- Internal data for fast path (ArborX-based projection) ---
 
     /// Noncontiguous partitioner used to communicate surface point values across MPI ranks
@@ -284,6 +350,51 @@ namespace MeltPoolDG::LevelSet::Tools
       const VectorType                          &solution_in,
       const bool                                 zero_out  = true,
       const std::function<number(const number)> &operation = {}) const;
+
+    /**
+     * @brief Communicate values at the locally owned interface points to the stencil points and
+     * write them into the DoF vector.
+     *
+     * Used by the @p nearest_point_fast algorithm.
+     *
+     * @tparam n_components Number of vector components.
+     * @param solution_out Output vector; only entries associated with stencil points are written.
+     * @param values_src Values at the locally owned interface points, with the components of each
+     * point stored contiguously.
+     * @param operation Optional unary operation to apply to each value.
+     */
+    template <int n_components>
+    void
+    scatter_interface_values_to_stencil(VectorType                                &solution_out,
+                                        const dealii::ArrayView<const number>     &values_src,
+                                        const std::function<number(const number)> &operation) const;
+
+    /**
+     * @brief Initialize the remote point evaluation with @p points.
+     *
+     * Throws an exception if any of the points lies outside of the domain. In this case, these
+     * points are written to file for debugging purposes.
+     */
+    void
+    reinit_remote_point_evaluation(const std::vector<dealii::Point<dim>> &points);
+
+    /**
+     * @brief Evaluate the signed distance to the requested isocontour at the points the remote
+     * point evaluation was last initialized with.
+     */
+    std::vector<number>
+    evaluate_distances() const;
+
+    /**
+     * @brief Evaluate the unit normal vector at the points the remote point evaluation was last
+     * initialized with.
+     *
+     * The normal is taken from the normal vector field if provided, otherwise from the gradient of
+     * the signed distance function. Normals with a norm below @p tolerance_normal_vector are set to
+     * zero.
+     */
+    std::vector<dealii::Point<dim>>
+    evaluate_unit_normals() const;
 
     /**
      * @brief Clear all internally cached data.
@@ -415,5 +526,13 @@ namespace MeltPoolDG::LevelSet::Tools
      */
     void
     local_compute_nearest_point_fast();
+
+    /**
+     * Fast path -- identify the closest point of each stencil point as the nearest point of the
+     * distributed point cloud @p surface_points using ArborX and set up the communication pattern
+     * between the owners of the surface points and the stencil points.
+     */
+    void
+    setup_nearest_point_fast(const std::vector<dealii::Point<dim>> &surface_points);
   };
 } // namespace MeltPoolDG::LevelSet::Tools

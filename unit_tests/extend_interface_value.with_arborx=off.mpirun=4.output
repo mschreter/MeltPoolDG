@@ -4,7 +4,7 @@
 | narrow band threshold 0.100000    isocontour = 0.000000                            nearest_point |
 | no. stencil points: 5156                                                           nearest_point |
 |      j=0 (normal) 5156 -> 5152 (✗)                                                 nearest_point |
-WARNING: The tolerance of 5152 points is not yet attained. Max distance value: 0.099843147
+WARNING: The tolerance of 5152 points is not yet attained. Max distance value: 0.099847309
 | total number of RPE points: 5156                                                   nearest_point |
 max distance to analytical solution (relative): 0.013019075
 max distance to numerical distance solution (relative): 0.0077693848

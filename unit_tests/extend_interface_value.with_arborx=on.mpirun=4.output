@@ -4,7 +4,7 @@
 | narrow band threshold 0.100000    isocontour = 0.000000                            nearest_point |
 | no. stencil points: 5156                                                           nearest_point |
 |      j=0 (normal) 5156 -> 5152 (✗)                                                 nearest_point |
-WARNING: The tolerance of 5152 points is not yet attained. Max distance value: 0.099843147
+WARNING: The tolerance of 5152 points is not yet attained. Max distance value: 0.099847309
 | total number of RPE points: 5156                                                   nearest_point |
 max distance to analytical solution (relative): 0.013019075
 max distance to numerical distance solution (relative): 0.0077693848
@@ -15,8 +15,8 @@ norm of interface vals: 148.23203
 | narrow band threshold 0.100000    isocontour = 0.000000                            nearest_point |
 | no. stencil points: 43250                                                          nearest_point |
 max distance to analytical solution (relative): 0.47324494
-max distance to numerical distance solution (relative): 3.1519602e-15
-norm of interface vals: 104.97875
+max distance to numerical distance solution (relative): 3.1918912e-15
+norm of interface vals: 104.97273
 ------------------------------------------------------------------
  START TEST: n_iter=16 type closest_point_normal #comp 1 #refine 6 dim 2
 ------------------------------------------------------------------
@@ -31,7 +31,7 @@ norm of interface vals: 104.97875
 |      j=6 (normal) 256 -> 0 (✗)                                                     nearest_point |
 | total number of RPE points: 28648                                                  nearest_point |
 max distance to analytical solution (relative): 0.0089895127
-max distance to numerical distance solution (relative): 9.994808e-11
+max distance to numerical distance solution (relative): 9.9948105e-11
 norm of interface vals: 148.23201
 ------------------------------------------------------------------
  START TEST: n_iter=5 type closest_point_normal #comp 2 #refine 6 dim 2
@@ -46,7 +46,7 @@ norm of interface vals: 148.23201
 WARNING: The tolerance of 3076 points is not yet attained. Max distance value: 5.2369329e-10
 | total number of RPE points: 25316                                                  nearest_point |
 max distance to analytical solution (relative): 0.0089895127
-max distance to numerical distance solution (relative): 1.737843e-10
+max distance to numerical distance solution (relative): 1.7378432e-10
 norm of interface vals: 209.63173
 ------------------------------------------------------------------
  START TEST: n_iter=5 type closest_point_normal_collinear #comp 2 #refine 6 dim 2
@@ -91,7 +91,7 @@ norm of interface vals: 209.63173
 | narrow band threshold 0.100000    isocontour = 0.000000                            nearest_point |
 | no. stencil points: 5156                                                           nearest_point |
 max distance to analytical solution (relative): 0.33349596
-max distance to numerical distance solution (relative): 4.9816097e-15
+max distance to numerical distance solution (relative): 4.9960036e-15
 norm of interface vals: 209.633
 ------------------------------------------------------------------
  START TEST: n_iter=1 type nearest_point_fast #comp 2 #refine 6 dim 2
@@ -99,8 +99,8 @@ norm of interface vals: 209.633
 | narrow band threshold 0.100000    isocontour = 0.000000                            nearest_point |
 | no. stencil points: 5156                                                           nearest_point |
 max distance to analytical solution (relative): 0.33349596
-max distance to numerical distance solution (relative): 4.9816097e-15
-norm of interface vals: 209.63286
+max distance to numerical distance solution (relative): 4.9960036e-15
+norm of interface vals: 209.633
 ------------------------------------------------------------------
  START TEST: n_iter=5 type closest_point_normal_collinear_coquerelle #comp 2 #refine 6 dim 2
 ------------------------------------------------------------------
@@ -141,5 +141,5 @@ WARNING: The tolerance of 3076 points is not yet attained. Max distance value: 5
 WARNING: The tolerance of the tangential correction of 4472 points is not yet attained. Max tangential distance value: 9.4400011e-05 max tolerance: 1.5625e-12
 | total number of RPE points: 117148                                                 nearest_point |
 max distance to analytical solution (relative): 0.0078111076
-max distance to numerical distance solution (relative): 9.8832563e-11
+max distance to numerical distance solution (relative): 9.8832609e-11
 norm of interface vals: 209.63173

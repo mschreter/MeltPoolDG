@@ -1,0 +1,18 @@
+------------------------------------------------------------------
+ START TEST: #comp 1 #refine 6 dim 2 #interface points 2048
+------------------------------------------------------------------
+no. stencil points: 5156
+max distance to analytical solution (relative): 0.02452
+max error of extended values: 0
+------------------------------------------------------------------
+ START TEST: #comp 2 #refine 6 dim 2 #interface points 2048
+------------------------------------------------------------------
+no. stencil points: 5156
+max distance to analytical solution (relative): 0.02452
+max error of extended values: 0
+------------------------------------------------------------------
+ START TEST: #comp 3 #refine 4 dim 3 #interface points 20000
+------------------------------------------------------------------
+no. stencil points: 5330
+max distance to analytical solution (relative): 0.06958
+max error of extended values: 0
