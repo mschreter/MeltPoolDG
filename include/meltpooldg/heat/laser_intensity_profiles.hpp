@@ -6,10 +6,14 @@
 #include <deal.II/base/point.h>
 #include <deal.II/base/tensor.h>
 #include <deal.II/base/utilities.h>
+#include <deal.II/base/vectorization.h>
 
+#include <meltpooldg/heat/laser_beam.hpp>
 #include <meltpooldg/heat/laser_data.hpp>
 
 #include <cmath>
+#include <functional>
+#include <memory>
 
 namespace MeltPoolDG::Heat
 {
@@ -32,6 +36,22 @@ namespace MeltPoolDG::Heat
     if (fac < 0.0)
       return 0.0;
     return fac;
+  }
+
+  /**
+   * Same as above for vectorized normal vectors.
+   */
+  template <int dim, typename number>
+  inline dealii::VectorizedArray<number>
+  compute_projection_factor(
+    const dealii::Tensor<1, dim, number>                          &laser_direction,
+    const dealii::Tensor<1, dim, dealii::VectorizedArray<number>> &normal_vector)
+  {
+    Assert(std::abs(laser_direction.norm() - 1.0) < 1e-8,
+           dealii::ExcMessage("The laser direction must be a unit vector"));
+
+    const auto fac = normal_vector * laser_direction;
+    return dealii::compare_and_apply_mask<dealii::SIMDComparison::less_than>(fac, 0.0, 0.0, fac);
   }
 
   /**
@@ -58,32 +78,26 @@ namespace MeltPoolDG::Heat
     return 0.0;
   }
 
+  /**
+   * Uniform intensity profile, which equals the power everywhere.
+   */
   template <int dim, typename number>
   class UniformIntensityProfile : public dealii::Function<dim, number>
   {
   public:
-    UniformIntensityProfile(const std::function<number(void)> &power_updater_in)
+    explicit UniformIntensityProfile(const std::function<number(void)> &get_power_in)
       : dealii::Function<dim, number>(1)
-      , power_updater(power_updater_in)
+      , get_power(get_power_in)
     {}
 
     inline number
     value(const dealii::Point<dim> &, const unsigned int /*component*/) const final
     {
-      return power;
-    }
-
-    void
-    set_time(const number time) final
-    {
-      (void)time;
-      power = power_updater();
+      return get_power();
     }
 
   private:
-    number power;
-
-    const std::function<number(void)> power_updater;
+    const std::function<number(void)> get_power;
   };
 
   /**
@@ -104,28 +118,29 @@ namespace MeltPoolDG::Heat
       const dealii::Point<dim, number> position;
     };
 
+    /**
+     * Constructor for a laser beam with constant @p power and @p laser_position.
+     */
     GaussProjectionIntensityProfile(const number                          power,
                                     const number                          radius_in,
-                                    const dealii::Point<dim, number>     &laser_position_in,
+                                    const dealii::Point<dim, number>     &laser_position,
                                     const dealii::Tensor<1, dim, number> &laser_direction_in)
-      : dealii::Function<dim, number>(1)
-      , radius(radius_in)
-      , laser_position(laser_position_in)
-      , laser_direction(laser_direction_in)
-      , updater()
-    {
-      AssertThrow(radius > 0.0,
-                  dealii::ExcMessage("The laser beam radius must be greater than zero! Abort.."));
-      update_peak_power_density(power);
-    }
+      : GaussProjectionIntensityProfile(radius_in,
+                                        laser_direction_in,
+                                        [state = State{power, laser_position}]() { return state; })
+    {}
 
+    /**
+     * Constructor for a laser beam, whose current power and position are returned by
+     * @p get_state_in.
+     */
     GaussProjectionIntensityProfile(const number                            radius_in,
                                     const dealii::Tensor<1, dim, number>   &laser_direction_in,
-                                    const std::function<const State(void)> &updater_in)
+                                    const std::function<const State(void)> &get_state_in)
       : dealii::Function<dim, number>(1)
       , radius(radius_in)
       , laser_direction(laser_direction_in)
-      , updater(updater_in)
+      , get_state(get_state_in)
     {
       AssertThrow(radius > 0.0,
                   dealii::ExcMessage("The laser beam radius must be greater than zero! Abort.."));
@@ -134,34 +149,17 @@ namespace MeltPoolDG::Heat
     inline number
     value(const dealii::Point<dim> &p, const unsigned int /*component*/) const final
     {
-      const number s = compute_distance_to_line(p, laser_position, laser_direction) / radius;
+      const State  state              = get_state();
+      const number peak_power_density = state.power / (radius * radius * dealii::numbers::PI_2);
+      const number s = compute_distance_to_line(p, state.position, laser_direction) / radius;
       return peak_power_density * std::exp(-2. * s * s);
     }
 
-    void
-    set_time(const number time) final
-    {
-      (void)time;
-      if (not updater)
-        return;
-      const auto state = updater();
-      update_peak_power_density(state.power);
-      laser_position = state.position;
-    }
-
   private:
-    void
-    update_peak_power_density(const number power)
-    {
-      peak_power_density = power / (radius * radius * dealii::numbers::PI_2);
-    }
-
     const number                         radius;
-    dealii::Point<dim, number>           laser_position;
     const dealii::Tensor<1, dim, number> laser_direction;
-    number                               peak_power_density;
 
-    const std::function<const State(void)> updater;
+    const std::function<const State(void)> get_state;
   };
 
   /**
@@ -182,10 +180,10 @@ namespace MeltPoolDG::Heat
     };
 
     GaussVolumetricIntensityProfile(const number                            radius_in,
-                                    const std::function<const State(void)> &updater_in)
+                                    const std::function<const State(void)> &get_state_in)
       : dealii::Function<dim, number>(1)
       , radius(radius_in)
-      , updater(updater_in)
+      , get_state(get_state_in)
     {
       AssertThrow(radius > 0.0,
                   dealii::ExcMessage("The laser beam radius must be greater than zero! Abort.."));
@@ -194,29 +192,17 @@ namespace MeltPoolDG::Heat
     inline number
     value(const dealii::Point<dim> &p, const unsigned int /*component*/) const final
     {
-      const number s = p.distance(laser_position) / radius;
+      const State  state = get_state();
+      const number peak_power_density =
+        state.power / dealii::Utilities::fixed_power<3>(radius * std::sqrt(dealii::numbers::PI_2));
+      const number s = p.distance(state.position) / radius;
       return peak_power_density * std::exp(-2. * s * s);
     }
 
-    void
-    set_time(const number time) final
-    {
-      (void)time;
-      if (not updater)
-        return;
-      const auto state = updater();
-      peak_power_density =
-        state.power / dealii::Utilities::fixed_power<3>(radius * std::sqrt(dealii::numbers::PI_2));
-      laser_position = state.position;
-    }
-
-
   private:
-    const number               radius;
-    dealii::Point<dim, number> laser_position;
-    number                     peak_power_density;
+    const number radius;
 
-    const std::function<const State(void)> updater;
+    const std::function<const State(void)> get_state;
   };
 
   /**
@@ -251,7 +237,7 @@ namespace MeltPoolDG::Heat
 
     GusarovIntensityProfile(const LaserData<number>::GusarovData   &data_in,
                             const number                            radius_in,
-                            const std::function<const State(void)> &updater_in)
+                            const std::function<const State(void)> &get_state_in)
       : dealii::Function<dim, number>(1)
       , data(data_in)
       , radius(radius_in)
@@ -259,7 +245,7 @@ namespace MeltPoolDG::Heat
       , a(std::sqrt(1. - data.reflectivity))
       , D((1. - a) * (1. - a - data.reflectivity * (1. + a)) * std::exp(-2. * a * lambda) -
           (1. + a) * (1. + a - data.reflectivity * (1. - a)) * std::exp(2. * a * lambda))
-      , updater(updater_in)
+      , get_state(get_state_in)
     {
       AssertThrow(radius > 0.0,
                   dealii::ExcMessage("The laser beam radius must be greater than zero! Abort.."));
@@ -268,29 +254,19 @@ namespace MeltPoolDG::Heat
     inline number
     value(const dealii::Point<dim> &p, const unsigned int /*component*/) const final
     {
-      const number distance = p.distance(laser_position);
-      const number z        = -(p[dim - 1] - laser_position[dim - 1]);
+      const State  state    = get_state();
+      const number distance = p.distance(state.position);
+      const number z        = -(p[dim - 1] - state.position[dim - 1]);
       const number xi       = z * data.extinction_coefficient;
 
-      return z >= data.layer_thickness or z < laser_position[dim - 1] ?
+      return z >= data.layer_thickness or z < state.position[dim - 1] ?
                0. :
-               -data.extinction_coefficient * power_density(distance) * dq_dxi(xi);
-    }
-
-    void
-    set_time(const number time) final
-    {
-      (void)time;
-      if (not updater)
-        return;
-      const auto state = updater();
-      power            = state.power;
-      laser_position   = state.position;
+               -data.extinction_coefficient * power_density(state.power, distance) * dq_dxi(xi);
     }
 
   private:
     inline number
-    power_density(const number distance) const
+    power_density(const number power, const number distance) const
     {
       return distance <= radius ? 3. * power / (dealii::numbers::PI * radius * radius) *
                                     dealii::Utilities::fixed_power<2>(1. - distance / radius) *
@@ -326,14 +302,56 @@ namespace MeltPoolDG::Heat
     }
 
     const LaserData<number>::GusarovData &data;
-    number                                power;
     const number                          radius;
-    dealii::Point<dim, number>            laser_position;
     const number                          lambda;
     const number                          a;
     const number                          D;
 
-    const std::function<const State(void)> updater;
+    const std::function<const State(void)> get_state;
   };
 
+  /**
+   * Create the intensity profile requested by @p laser_data, which evaluates the current power
+   * and position of @p beam, i.e. it follows the beam without further updates. For a volumetric
+   * heat source
+   * (@p is_volumetric), the Gauss profile depends on the distance to the beam center, otherwise
+   * on the distance to the beam axis.
+   */
+  template <int dim, typename number>
+  std::shared_ptr<dealii::Function<dim, number>>
+  create_intensity_profile(const LaserData<number>      &laser_data,
+                           const LaserBeam<dim, number> &beam,
+                           const bool                    is_volumetric)
+  {
+    switch (laser_data.intensity_profile)
+      {
+        case LaserIntensityProfileType::uniform:
+          return std::make_shared<UniformIntensityProfile<dim, number>>(
+            [&beam]() { return beam.get_power(); });
+        case LaserIntensityProfileType::Gauss:
+          if (is_volumetric)
+            return std::make_shared<GaussVolumetricIntensityProfile<dim, number>>(
+              laser_data.radius,
+              [&beam]() -> const GaussVolumetricIntensityProfile<dim, number>::State {
+                return {.power = beam.get_power(), .position = beam.get_position()};
+              });
+          else
+            return std::make_shared<GaussProjectionIntensityProfile<dim, number>>(
+              laser_data.radius,
+              beam.get_direction(),
+              [&beam]() -> const GaussProjectionIntensityProfile<dim, number>::State {
+                return {.power = beam.get_power(), .position = beam.get_position()};
+              });
+        case LaserIntensityProfileType::Gusarov:
+          return std::make_shared<GusarovIntensityProfile<dim, number>>(
+            laser_data.gusarov,
+            laser_data.radius,
+            [&beam]() -> const GusarovIntensityProfile<dim, number>::State {
+              return {.power = beam.get_power(), .position = beam.get_position()};
+            });
+        default:
+          AssertThrow(false, dealii::ExcNotImplemented());
+          return nullptr;
+      }
+  }
 } // namespace MeltPoolDG::Heat

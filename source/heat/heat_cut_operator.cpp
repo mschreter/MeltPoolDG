@@ -43,54 +43,18 @@ namespace MeltPoolDG::Heat
   namespace internal
   {
     template <int dim, typename number>
-    dealii::VectorizedArray<number>
-    evaluate_function(const dealii::Function<dim, number>                       &function,
-                      const dealii::Point<dim, dealii::VectorizedArray<number>> &p_vectorized,
-                      const unsigned int                                         component = 0)
-    {
-      dealii::VectorizedArray<number> result;
-      for (unsigned int v = 0; v < dealii::VectorizedArray<number>::size(); ++v)
-        {
-          dealii::Point<dim> p;
-          for (unsigned int d = 0; d < dim; ++d)
-            p[d] = p_vectorized[d][v];
-          result[v] = function.value(p, component);
-        }
-      return result;
-    }
-
-    /*
-     * vectorized implementation of the function in meltpooldg/heat/intensity_profiles.hpp with the
-     * same name
-     */
-    template <int dim, typename number>
     inline dealii::VectorizedArray<number>
-    compute_projection_factor(
-      const dealii::Tensor<1, dim, number>                          &laser_direction,
-      const dealii::Tensor<1, dim, dealii::VectorizedArray<number>> &normal_vector)
-    {
-      Assert(std::abs(laser_direction.norm() - 1.0) < 1e-8,
-             dealii::ExcMessage("The laser direction must be a unit vector"));
-
-      const auto fac = normal_vector * laser_direction;
-      return dealii::compare_and_apply_mask<dealii::SIMDComparison::less_than>(fac, 0.0, 0.0, fac);
-    }
-
-    template <int dim, typename number>
-    inline dealii::VectorizedArray<number>
-    compute_laser_heat_source(
-      const dealii::Function<dim, number>  *laser_intensity_profile,
-      const dealii::Tensor<1, dim, number> &laser_direction,
+    compute_interface_heat_flux(
+      const InterfaceHeatFlux<dim, number> *interface_heat_flux,
       const dealii::FEPointEvaluation<1, dim, dim, dealii::VectorizedArray<number>>
                         &temperature_eval,
       const unsigned int q)
     {
-      if (laser_intensity_profile == nullptr)
+      if (interface_heat_flux == nullptr)
         return dealii::VectorizedArray<number>(0.0);
 
-      return evaluate_function<dim, number>(*laser_intensity_profile,
-                                            temperature_eval.quadrature_point(q)) *
-             compute_projection_factor(laser_direction, temperature_eval.normal_vector(q));
+      return interface_heat_flux->value(temperature_eval.quadrature_point(q),
+                                        temperature_eval.normal_vector(q));
     }
 
     template <typename Evaluation>
@@ -529,12 +493,10 @@ namespace MeltPoolDG::Heat
 
   template <int dim, typename number>
   void
-  HeatCutOperator<dim, number>::register_laser_intensity_function_and_direction(
-    std::shared_ptr<const dealii::Function<dim, number>> laser_intensity_profile_in,
-    const dealii::Tensor<1, dim, number>                &laser_direction_in)
+  HeatCutOperator<dim, number>::register_interface_heat_flux(
+    std::shared_ptr<const InterfaceHeatFlux<dim, number>> interface_heat_flux_in)
   {
-    laser_intensity_profile = laser_intensity_profile_in;
-    laser_direction         = laser_direction_in;
+    interface_heat_flux = std::move(interface_heat_flux_in);
   }
 
 
@@ -1669,10 +1631,9 @@ namespace MeltPoolDG::Heat
                       [&](const dealii::VectorizedArray<number> &T) { return compute_qVapor(T); },
                       ost_factor_implicit,
                       ost_factor_explicit,
-                      internal::compute_laser_heat_source(laser_intensity_profile.get(),
-                                                          laser_direction,
-                                                          T_new_eval_interface_l,
-                                                          q_batch) *
+                      internal::compute_interface_heat_flux(interface_heat_flux.get(),
+                                                            T_new_eval_interface_l,
+                                                            q_batch) *
                         this->time_increment,
                       q_batch);
                   }
@@ -1953,10 +1914,9 @@ namespace MeltPoolDG::Heat
                       ost_factor_implicit,
                       ost_factor_explicit,
                       nitsche_factor,
-                      internal::compute_laser_heat_source(laser_intensity_profile.get(),
-                                                          laser_direction,
-                                                          T_new_eval_interface_l,
-                                                          q_batch) *
+                      internal::compute_interface_heat_flux(interface_heat_flux.get(),
+                                                            T_new_eval_interface_l,
+                                                            q_batch) *
                         this->time_increment,
                       kappa_l,
                       kappa_g,

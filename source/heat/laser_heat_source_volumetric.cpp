@@ -4,6 +4,7 @@
 #include <deal.II/fe/fe_values.h>
 
 #include <meltpooldg/heat/laser_heat_source_volumetric.hpp>
+#include <meltpooldg/heat/laser_intensity_profiles.hpp>
 
 #include <vector>
 
@@ -13,34 +14,43 @@ namespace MeltPoolDG::Heat
 
   template <int dim, typename number>
   LaserHeatSourceVolumetric<dim, number>::LaserHeatSourceVolumetric(
-    const std::shared_ptr<const Function<dim, number>> intensity_profile_in)
-    : intensity_profile(intensity_profile_in)
+    const ScratchData<dim, dim, number> &scratch_data_in,
+    const LaserData<number>             &laser_data,
+    const LaserBeam<dim, number>        &beam,
+    const unsigned int                   heat_dof_idx_in,
+    HeatSourceReceiver<dim, number>     &heat_operation_in)
+    : scratch_data(scratch_data_in)
+    , intensity_profile(create_intensity_profile(laser_data, beam, true /*is_volumetric*/))
+    , heat_dof_idx(heat_dof_idx_in)
+    , heat_operation(heat_operation_in)
   {}
 
   template <int dim, typename number>
   void
-  LaserHeatSourceVolumetric<dim, number>::compute_volumetric_heat_source(
-    VectorType                          &heat_source_vector,
-    const ScratchData<dim, dim, number> &scratch_data,
-    const unsigned int                   heat_source_dof_idx,
-    const bool                           zero_out) const
+  LaserHeatSourceVolumetric<dim, number>::apply()
   {
-    if (zero_out)
-      heat_source_vector = 0;
+    scratch_data.initialize_dof_vector(heat_source, heat_dof_idx);
+    compute_volumetric_heat_source(heat_source);
+    heat_operation.get_heat_source() += heat_source;
+  }
 
+  template <int dim, typename number>
+  void
+  LaserHeatSourceVolumetric<dim, number>::compute_volumetric_heat_source(
+    VectorType &heat_source_vector) const
+  {
     FEValues<dim> heat_source_eval(
       scratch_data.get_mapping(),
-      scratch_data.get_dof_handler(heat_source_dof_idx).get_fe(),
+      scratch_data.get_dof_handler(heat_dof_idx).get_fe(),
       Quadrature<dim>(
-        scratch_data.get_dof_handler(heat_source_dof_idx).get_fe().get_unit_support_points()),
+        scratch_data.get_dof_handler(heat_dof_idx).get_fe().get_unit_support_points()),
       update_quadrature_points);
 
     const unsigned int dofs_per_cell =
-      scratch_data.get_dof_handler(heat_source_dof_idx).get_fe().n_dofs_per_cell();
+      scratch_data.get_dof_handler(heat_dof_idx).get_fe().n_dofs_per_cell();
     std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
 
-    for (const auto &cell :
-         scratch_data.get_dof_handler(heat_source_dof_idx).active_cell_iterators())
+    for (const auto &cell : scratch_data.get_dof_handler(heat_dof_idx).active_cell_iterators())
       {
         if (cell->is_locally_owned())
           {
@@ -54,7 +64,7 @@ namespace MeltPoolDG::Heat
           }
       }
 
-    scratch_data.get_constraint(heat_source_dof_idx).distribute(heat_source_vector);
+    scratch_data.get_constraint(heat_dof_idx).distribute(heat_source_vector);
   }
 
   template class LaserHeatSourceVolumetric<1, double>;

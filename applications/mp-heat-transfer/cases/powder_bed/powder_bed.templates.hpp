@@ -179,7 +179,7 @@ namespace MeltPoolDG::Simulation::PowderBed
 #endif
       if (this->parameters.laser.model == Heat::LaserModelType::RTE)
       {
-        this->parameters.laser.rte_boundary_id = upper_bc;
+        this->attach_boundary_condition(upper_bc, "laser_inflow", "intensity");
       }
 
     if (this->parameters.base.fe.type != FiniteElementType::FE_SimplexP)

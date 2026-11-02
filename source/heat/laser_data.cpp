@@ -187,18 +187,9 @@ namespace MeltPoolDG::Heat
   LaserData<number>::post(
     const unsigned int          dim,
     const bool                  heat_use_volume_specific_thermal_capacity_for_phase_interpolation,
-    const MaterialData<number> &material,
-    const bool                  heat_is_cut_operator)
+    const MaterialData<number> &material)
   {
     post(dim);
-
-    if (heat_is_cut_operator)
-      {
-        AssertThrow(absorptivity_gas == absorptivity_liquid, dealii::ExcNotImplemented());
-        power *= absorptivity_liquid;
-        absorptivity_gas    = 1.;
-        absorptivity_liquid = 1.;
-      }
 
     // set automatic weights of asymmetric delta functions, if requested
     if (heat_use_volume_specific_thermal_capacity_for_phase_interpolation)

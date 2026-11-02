@@ -7,7 +7,10 @@
 #include <deal.II/lac/la_parallel_vector.h>
 
 #include <meltpooldg/core/scratch_data.hpp>
+#include <meltpooldg/heat/heat_source_receiver.hpp>
+#include <meltpooldg/heat/laser_beam.hpp>
 #include <meltpooldg/heat/laser_data.hpp>
+#include <meltpooldg/heat/laser_heat_source_base.hpp>
 #include <meltpooldg/level_set/delta_approximation_phase_weighted.hpp>
 #include <meltpooldg/level_set/delta_approximation_phase_weighted_data.hpp>
 
@@ -16,80 +19,65 @@
 namespace MeltPoolDG::Heat
 {
   /**
-   * Projection based laser heat source model.
+   * Projection based laser heat source model: the intensity profile is projected in beam
+   * direction onto the phase interface. Depending on the laser model, the resulting
+   * interfacial heat flux is
+   *
+   * - LaserModelType::interface_projection_regularized: regularized over the diffuse interface
+   *   and added to the volumetric heat source,
+   * - LaserModelType::interface_projection_sharp(_conforming): integrated along the sharp
+   *   interface and added to the right-hand side of the heat operation.
+   *
+   * For heat operations that evaluate the interfacial heat flux themselves (CutFEM), see
+   * LaserInterfaceHeatFlux.
    */
   template <int dim, typename number>
-  class LaserHeatSourceProjectionBased
+  class LaserHeatSourceProjectionBased final : public LaserHeatSourceBase<dim, number>
   {
     using VectorType      = dealii::LinearAlgebra::distributed::Vector<number>;
     using BlockVectorType = dealii::LinearAlgebra::distributed::BlockVector<number>;
 
   public:
-    LaserHeatSourceProjectionBased(
-      const LaserData<number>                                   &laser_data_in,
-      const std::shared_ptr<const dealii::Function<dim, number>> intensity_profile_in,
-      const bool variable_properties_over_interface_in,
-      const LevelSet::DeltaApproximationPhaseWeightedData<number>
-        &delta_approximation_phase_weighted_data);
+    LaserHeatSourceProjectionBased(const ScratchData<dim, dim, number>  &scratch_data_in,
+                                   const LaserData<number>              &laser_data_in,
+                                   const LaserBeam<dim, number>         &beam,
+                                   const LaserCouplingData<dim, number> &coupling_data_in,
+                                   HeatSourceReceiver<dim, number>      &heat_operation_in);
 
+    bool
+    requires_inner_face_loops() const override;
+
+    void
+    apply() override;
+
+  private:
     /**
-     * Compute a DoF vector of the interfacial heat source.
+     * Compute a DoF vector of the interfacial heat source, regularized over the diffuse
+     * interface by a delta function. If no @p normal_vector is given, the normal vector is
+     * computed from the gradient of the heaviside.
      */
     void
-    compute_interfacial_heat_source(VectorType                          &heat_source_vector,
-                                    const ScratchData<dim, dim, number> &scratch_data,
-                                    const unsigned int                   heat_dof_idx,
-                                    const VectorType                    &level_set_heaviside,
-                                    const unsigned int                   ls_dof_idx,
-                                    const bool                           zero_out       = true,
-                                    const BlockVectorType               *normal_vector  = nullptr,
-                                    const unsigned int                   normal_dof_idx = 0) const;
+    compute_regularized_heat_source(VectorType            &heat_source_vector,
+                                    const BlockVectorType *normal_vector) const;
 
     /**
-     * Compute a DoF vector of the interfacial heat source by evaluating the surface
-     * integral.
+     * Add the weak form of the interfacial heat source to @p heat_rhs by evaluating the surface
+     * integral along the sharp interface, determined by the marching cube algorithm.
      */
     void
-    compute_interfacial_heat_source_sharp(VectorType                          &heat_rhs,
-                                          const ScratchData<dim, dim, number> &scratch_data,
-                                          const unsigned int                   heat_dof_idx,
-                                          const VectorType                    &level_set_heaviside,
-                                          const unsigned int                   ls_dof_idx,
-                                          const bool                           zero_out = true,
-                                          const BlockVectorType *normal_vector          = nullptr,
-                                          const unsigned int     normal_dof_idx         = 0) const;
+    add_sharp_heat_source(VectorType &heat_rhs, const BlockVectorType *normal_vector) const;
 
     /**
-     * For a given finite element discretization, hidden within @p scratch_data,
-     * compute a right-hand-side contribution for heat-transfer and store it
-     * into the DoF-vector @p heat_rhs (with the corresponding index @p heat_dof_idx).
-     * Based on the level-set indicator function (@p level_set_heaviside and
-     * corresponding DoFHandler index @p ls_dof_idx), cells
-     * will be categorized into the different phases. We loop over all element
-     * faces that are along the phase boundary and perform a surface integral
-     * based on the quadrature rule, given by the index @p heat_dof_idx,
-     * to compute the laser impact. The laser parameters are @p laser_power and
-     * @p laser_position. Set @p zero_out to true to zero out the right-hand-side
-     * vector @p heat_rhs in advance. The optional arguments
-     * @p normal_vector and @p normal_dof_idx, can be used to compute the unit
-     * normal at the surface.
+     * Same as add_sharp_heat_source(), but the surface integral is evaluated over the element
+     * faces along the phase boundary.
      *
      * @note This function should only be used, if the level-set isosurface
      * is aligned with element faces and does not cross the cells.
      */
     void
-    compute_interfacial_heat_source_sharp_conforming(
-      VectorType                          &heat_rhs,
-      const ScratchData<dim, dim, number> &scratch_data,
-      const unsigned int                   heat_dof_idx,
-      const unsigned int                   heat_quad_idx,
-      const VectorType                    &level_set_heaviside,
-      const unsigned int                   ls_dof_idx,
-      const bool                           zero_out,
-      const BlockVectorType               *normal_vector,
-      const unsigned int                   normal_dof_idx) const;
+    add_sharp_conforming_heat_source(VectorType            &heat_rhs,
+                                     const BlockVectorType *normal_vector) const;
 
-  private:
     /**
      * Local interfacial heat source
      *
@@ -101,7 +89,13 @@ namespace MeltPoolDG::Heat
                                           const number                          delta_value,
                                           const number                          heaviside) const;
 
+    const ScratchData<dim, dim, number> &scratch_data;
+
     const LaserData<number> &laser_data;
+
+    const LaserCouplingData<dim, number> coupling_data;
+
+    HeatSourceReceiver<dim, number> &heat_operation;
 
     const std::shared_ptr<const dealii::Function<dim, number>> intensity_profile;
 
@@ -110,5 +104,7 @@ namespace MeltPoolDG::Heat
     const bool variable_properties_over_interface;
 
     std::unique_ptr<const LevelSet::DeltaApproximationBase<number>> delta_phase_weighted;
+
+    VectorType heat_source;
   };
 } // namespace MeltPoolDG::Heat

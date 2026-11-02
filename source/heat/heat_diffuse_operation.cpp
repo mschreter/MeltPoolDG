@@ -475,6 +475,14 @@ namespace MeltPoolDG::Heat
     return user_rhs;
   }
 
+  template <int dim, typename number>
+  void
+  HeatDiffuseOperation<dim, number>::reset_heat_sources()
+  {
+    heat_source = 0.0;
+    user_rhs    = 0.0;
+  }
+
   template class HeatDiffuseOperation<1, double>;
   template class HeatDiffuseOperation<2, double>;
   template class HeatDiffuseOperation<3, double>;

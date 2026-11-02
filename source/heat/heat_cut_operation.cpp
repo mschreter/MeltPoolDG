@@ -151,12 +151,17 @@ namespace MeltPoolDG::Heat
 
   template <int dim, typename number>
   void
-  HeatCutOperation<dim, number>::register_laser_intensity_function_and_direction(
-    std::shared_ptr<const dealii::Function<dim, number>> laser_intensity_profile_in,
-    const dealii::Tensor<1, dim, number>                &laser_direction_in)
+  HeatCutOperation<dim, number>::register_interface_heat_flux(
+    std::shared_ptr<const InterfaceHeatFlux<dim, number>> interface_heat_flux)
   {
-    heat_operator->register_laser_intensity_function_and_direction(
-      std::move(laser_intensity_profile_in), laser_direction_in);
+    heat_operator->register_interface_heat_flux(std::move(interface_heat_flux));
+  }
+
+  template <int dim, typename number>
+  void
+  HeatCutOperation<dim, number>::reset_heat_sources()
+  {
+    volumetric_heat_source = 0.0;
   }
 
   template <int dim, typename number>

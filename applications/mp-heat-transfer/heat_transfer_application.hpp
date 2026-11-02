@@ -11,7 +11,8 @@
 #include <meltpooldg/core/material.hpp>
 #include <meltpooldg/core/scratch_data.hpp>
 #include <meltpooldg/heat/heat_operation_base.hpp>
-#include <meltpooldg/heat/laser_operation.hpp>
+#include <meltpooldg/heat/laser_beam.hpp>
+#include <meltpooldg/heat/laser_heat_source_base.hpp>
 #include <meltpooldg/post_processing/generic_data_out.hpp>
 #include <meltpooldg/post_processing/postprocessor.hpp>
 #include <meltpooldg/time_integration/solution_history.hpp>
@@ -70,7 +71,8 @@ namespace MeltPoolDG::Heat
     std::shared_ptr<dealii::Function<dim>> heaviside_field_function;
     std::shared_ptr<dealii::Function<dim>> level_set_field_function;
 
-    std::shared_ptr<LaserOperation<dim, number>> laser_operation;
+    std::shared_ptr<LaserBeam<dim, number>>           laser_beam;
+    std::shared_ptr<LaserHeatSourceBase<dim, number>> laser_heat_source;
 
     // AMR
     AMR::MarkCellsForRefinementType<dim>            mark_cells_for_refinement = {};

@@ -18,6 +18,7 @@
 #include <meltpooldg/heat/heat_data.hpp>
 #include <meltpooldg/heat/heat_diffuse_operator.hpp>
 #include <meltpooldg/heat/heat_operation_base.hpp>
+#include <meltpooldg/heat/heat_source_receiver.hpp>
 #include <meltpooldg/level_set/nearest_point.hpp>
 #include <meltpooldg/level_set/nearest_point_data.hpp>
 #include <meltpooldg/linear_algebra/newton_raphson_solver.hpp>
@@ -37,7 +38,8 @@
 namespace MeltPoolDG::Heat
 {
   template <int dim, typename number>
-  class HeatDiffuseOperation : public HeatOperationBase<dim, number>
+  class HeatDiffuseOperation : public HeatOperationBase<dim, number>,
+                               public HeatSourceReceiver<dim, number>
   {
   private:
     using VectorType      = typename HeatOperationBase<dim, number>::VectorType;
@@ -187,7 +189,10 @@ namespace MeltPoolDG::Heat
     get_user_rhs() const;
 
     VectorType &
-    get_user_rhs();
+    get_user_rhs() override;
+
+    void
+    reset_heat_sources() override;
 
   private:
     void

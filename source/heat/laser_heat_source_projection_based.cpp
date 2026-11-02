@@ -39,18 +39,59 @@ namespace MeltPoolDG::Heat
 
   template <int dim, typename number>
   LaserHeatSourceProjectionBased<dim, number>::LaserHeatSourceProjectionBased(
-    const LaserData<number>                           &laser_data_in,
-    const std::shared_ptr<const Function<dim, number>> intensity_profile_in,
-    const bool                                         variable_properties_over_interface_in,
-    const LevelSet::DeltaApproximationPhaseWeightedData<number>
-      &delta_approximation_phase_weighted_data)
-    : laser_data(laser_data_in)
-    , intensity_profile(intensity_profile_in)
+    const ScratchData<dim, dim, number>  &scratch_data_in,
+    const LaserData<number>              &laser_data_in,
+    const LaserBeam<dim, number>         &beam,
+    const LaserCouplingData<dim, number> &coupling_data_in,
+    HeatSourceReceiver<dim, number>      &heat_operation_in)
+    : scratch_data(scratch_data_in)
+    , laser_data(laser_data_in)
+    , coupling_data(coupling_data_in)
+    , heat_operation(heat_operation_in)
+    , intensity_profile(create_intensity_profile(laser_data, beam, false /*is_volumetric*/))
     , laser_direction(laser_data.template get_beam_direction<dim>())
-    , variable_properties_over_interface(variable_properties_over_interface_in)
+    , variable_properties_over_interface(coupling_data.variable_properties_over_interface)
   {
     delta_phase_weighted =
-      create_phase_weighted_delta_approximation(delta_approximation_phase_weighted_data);
+      create_phase_weighted_delta_approximation(laser_data.delta_approximation_phase_weighted);
+
+    AssertThrow(coupling_data.level_set_as_heaviside != nullptr,
+                ExcMessage("The projection-based laser models require a heaviside field."));
+  }
+
+  template <int dim, typename number>
+  bool
+  LaserHeatSourceProjectionBased<dim, number>::requires_inner_face_loops() const
+  {
+    return laser_data.model == LaserModelType::interface_projection_sharp_conforming;
+  }
+
+  template <int dim, typename number>
+  void
+  LaserHeatSourceProjectionBased<dim, number>::apply()
+  {
+    const BlockVectorType *normal_vector =
+      coupling_data.get_normal_vector ? &coupling_data.get_normal_vector() : nullptr;
+
+    switch (laser_data.model)
+      {
+          case LaserModelType::interface_projection_regularized: {
+            scratch_data.initialize_dof_vector(heat_source, coupling_data.heat_no_bc_dof_idx);
+            compute_regularized_heat_source(heat_source, normal_vector);
+            heat_operation.get_heat_source() += heat_source;
+            break;
+          }
+          case LaserModelType::interface_projection_sharp: {
+            add_sharp_heat_source(heat_operation.get_user_rhs(), normal_vector);
+            break;
+          }
+          case LaserModelType::interface_projection_sharp_conforming: {
+            add_sharp_conforming_heat_source(heat_operation.get_user_rhs(), normal_vector);
+            break;
+          }
+        default:
+          AssertThrow(false, ExcNotImplemented());
+      }
   }
 
 
@@ -75,18 +116,16 @@ namespace MeltPoolDG::Heat
 
   template <int dim, typename number>
   void
-  LaserHeatSourceProjectionBased<dim, number>::compute_interfacial_heat_source(
-    VectorType                          &heat_source_vector,
-    const ScratchData<dim, dim, number> &scratch_data,
-    const unsigned int                   heat_dof_idx,
-    const VectorType                    &level_set_heaviside,
-    const unsigned int                   ls_dof_idx,
-    const bool                           zero_out,
-    const BlockVectorType               *normal_vector,
-    const unsigned int                   normal_dof_idx) const
+  LaserHeatSourceProjectionBased<dim, number>::compute_regularized_heat_source(
+    VectorType            &heat_source_vector,
+    const BlockVectorType *normal_vector) const
   {
-    if (zero_out)
-      heat_source_vector = 0.0;
+    const unsigned int heat_dof_idx        = coupling_data.heat_no_bc_dof_idx;
+    const VectorType  &level_set_heaviside = *coupling_data.level_set_as_heaviside;
+    const unsigned int ls_dof_idx          = coupling_data.level_set_dof_idx;
+    const unsigned int normal_dof_idx      = coupling_data.normal_dof_idx;
+
+    heat_source_vector = 0.0;
 
     const bool update_ghosts = !level_set_heaviside.has_ghost_elements();
 
@@ -319,19 +358,15 @@ namespace MeltPoolDG::Heat
 
   template <int dim, typename number>
   void
-  LaserHeatSourceProjectionBased<dim, number>::compute_interfacial_heat_source_sharp_conforming(
-    VectorType                          &heat_rhs,
-    const ScratchData<dim, dim, number> &scratch_data,
-    const unsigned int                   heat_dof_idx,
-    const unsigned int                   heat_quad_idx,
-    const VectorType                    &level_set_heaviside,
-    const unsigned int                   ls_dof_idx,
-    const bool                           zero_out,
-    const BlockVectorType               *normal_vector,
-    const unsigned int                   normal_dof_idx) const
+  LaserHeatSourceProjectionBased<dim, number>::add_sharp_conforming_heat_source(
+    VectorType            &heat_rhs,
+    const BlockVectorType *normal_vector) const
   {
-    if (zero_out)
-      scratch_data.initialize_dof_vector(heat_rhs, heat_dof_idx);
+    const unsigned int heat_dof_idx        = coupling_data.heat_no_bc_dof_idx;
+    const VectorType  &level_set_heaviside = *coupling_data.level_set_as_heaviside;
+    const unsigned int ls_dof_idx          = coupling_data.level_set_dof_idx;
+    const unsigned int normal_dof_idx      = coupling_data.normal_dof_idx;
+    const unsigned int heat_quad_idx       = coupling_data.heat_quad_idx;
 
     const bool update_ghosts = !level_set_heaviside.has_ghost_elements();
     if (update_ghosts)
@@ -440,18 +475,14 @@ namespace MeltPoolDG::Heat
 
   template <int dim, typename number>
   void
-  LaserHeatSourceProjectionBased<dim, number>::compute_interfacial_heat_source_sharp(
-    VectorType                          &heat_rhs,
-    const ScratchData<dim, dim, number> &scratch_data,
-    const unsigned int                   heat_dof_idx,
-    const VectorType                    &level_set_heaviside,
-    const unsigned int                   ls_dof_idx,
-    const bool                           zero_out,
-    const BlockVectorType               *normal_vector,
-    const unsigned int                   normal_dof_idx) const
+  LaserHeatSourceProjectionBased<dim, number>::add_sharp_heat_source(
+    VectorType            &heat_rhs,
+    const BlockVectorType *normal_vector) const
   {
-    if (zero_out)
-      scratch_data.initialize_dof_vector(heat_rhs, heat_dof_idx);
+    const unsigned int heat_dof_idx        = coupling_data.heat_no_bc_dof_idx;
+    const VectorType  &level_set_heaviside = *coupling_data.level_set_as_heaviside;
+    const unsigned int ls_dof_idx          = coupling_data.level_set_dof_idx;
+    const unsigned int normal_dof_idx      = coupling_data.normal_dof_idx;
 
     const bool update_ghosts = !level_set_heaviside.has_ghost_elements();
     if (update_ghosts)

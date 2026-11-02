@@ -82,10 +82,20 @@ namespace MeltPoolDG::Heat
     virtual VectorType &
     get_interface_temperature() = 0;
 
+    /**
+     * Volumetric heat source, given as DoF vector.
+     */
     virtual const VectorType &
     get_heat_source() const = 0;
 
     virtual VectorType &
     get_heat_source() = 0;
+
+    /**
+     * Set all heat sources to zero. Call this function before the heat sources of a new time
+     * step are added.
+     */
+    virtual void
+    reset_heat_sources() = 0;
   };
 } // namespace MeltPoolDG::Heat

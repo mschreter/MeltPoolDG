@@ -75,9 +75,6 @@ namespace MeltPoolDG::Heat
 
     number radius = 0.0;
 
-    // if model = RTE, this value must be set by the simulation
-    dealii::types::boundary_id rte_boundary_id = dealii::numbers::invalid_boundary_id;
-
     LevelSet::DeltaApproximationPhaseWeightedData<number> delta_approximation_phase_weighted;
 
     struct GusarovData
@@ -104,8 +101,7 @@ namespace MeltPoolDG::Heat
     void
     post(const unsigned int dim,
          const bool         heat_use_volume_specific_thermal_capacity_for_phase_interpolation,
-         const MaterialData<number> &material,
-         const bool                  heat_is_cut_operator);
+         const MaterialData<number> &material);
 
     void
     check_input_parameters() const;

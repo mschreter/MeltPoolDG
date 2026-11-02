@@ -18,6 +18,7 @@
 #include <meltpooldg/heat/heat_cut_operator.hpp>
 #include <meltpooldg/heat/heat_data.hpp>
 #include <meltpooldg/heat/heat_operation_base.hpp>
+#include <meltpooldg/heat/heat_source_receiver.hpp>
 #include <meltpooldg/level_set/nearest_point.hpp>
 #include <meltpooldg/level_set/nearest_point_data.hpp>
 #include <meltpooldg/linear_algebra/newton_raphson_solver.hpp>
@@ -37,7 +38,8 @@
 namespace MeltPoolDG::Heat
 {
   template <int dim, typename number>
-  class HeatCutOperation : public HeatOperationBase<dim, number>
+  class HeatCutOperation : public HeatOperationBase<dim, number>,
+                           public InterfaceHeatFluxReceiver<dim, number>
   {
   private:
     using VectorType      = typename HeatOperationBase<dim, number>::VectorType;
@@ -121,9 +123,11 @@ namespace MeltPoolDG::Heat
       const VectorType  *velocity_old_in = nullptr);
 
     void
-    register_laser_intensity_function_and_direction(
-      std::shared_ptr<const dealii::Function<dim, number>> laser_intensity_profile_in,
-      const dealii::Tensor<1, dim, number>                &laser_direction_in);
+    register_interface_heat_flux(
+      std::shared_ptr<const InterfaceHeatFlux<dim, number>> interface_heat_flux) override;
+
+    void
+    reset_heat_sources() override;
 
     /**
      * Before this operator can adapt_to_new_interface_position(), attach the following lambdas:

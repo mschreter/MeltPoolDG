@@ -16,7 +16,8 @@
 #include <meltpooldg/flow/incompressible_flow_operation_base.hpp>
 #include <meltpooldg/flow/surface_tension_operation.hpp>
 #include <meltpooldg/heat/heat_operation_base.hpp>
-#include <meltpooldg/heat/laser_operation.hpp>
+#include <meltpooldg/heat/laser_beam.hpp>
+#include <meltpooldg/heat/laser_heat_source_base.hpp>
 #include <meltpooldg/level_set/level_set_operation.hpp>
 #include <meltpooldg/phase_change/evaporation_operation.hpp>
 #include <meltpooldg/phase_change/incompressible_newtonian_evaporation_material.hpp>
@@ -219,7 +220,8 @@ namespace MeltPoolDG
     std::shared_ptr<Material<number>>                                   material;
     std::shared_ptr<Flow::IncompressibleFlowOperationBase<dim, number>> flow_operation;
     std::shared_ptr<LevelSet::LevelSetOperation<dim, number>>           level_set_operation;
-    std::shared_ptr<Heat::LaserOperation<dim, number>>                  laser_operation;
+    std::shared_ptr<Heat::LaserBeam<dim, number>>                       laser_beam;
+    std::shared_ptr<Heat::LaserHeatSourceBase<dim, number>>             laser_heat_source;
     std::shared_ptr<MeltFrontPropagation<dim, number>>                  melt_front_propagation;
     std::shared_ptr<Evaporation::EvaporationOperation<dim, number>> evaporation_operation = nullptr;
     std::shared_ptr<Evaporation::IncompressibleNewtonianFluidEvaporationMaterial<dim, number>>

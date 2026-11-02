@@ -17,6 +17,7 @@
 #include <meltpooldg/core/operator_base.hpp>
 #include <meltpooldg/core/scratch_data.hpp>
 #include <meltpooldg/heat/heat_data.hpp>
+#include <meltpooldg/heat/heat_source_receiver.hpp>
 #include <meltpooldg/phase_change/evaporation_data.hpp>
 #include <meltpooldg/phase_change/evaporative_cooling.hpp>
 #include <meltpooldg/utilities/fe_integrator.hpp>
@@ -91,9 +92,8 @@ namespace MeltPoolDG::Heat
     // optional: evaporative heat cooling
     std::unique_ptr<Evaporation::EvaporativeCooling<number>> evapor_cooling;
 
-    // optional: laser intensity and direction
-    std::shared_ptr<const dealii::Function<dim, number>> laser_intensity_profile;
-    dealii::Tensor<1, dim, number>                       laser_direction;
+    // optional: heat flux across the interface, e.g. of a laser
+    std::shared_ptr<const InterfaceHeatFlux<dim, number>> interface_heat_flux;
 
     // optional: flow velocity for internal convection
     const unsigned int vel_dof_idx;
@@ -124,9 +124,8 @@ namespace MeltPoolDG::Heat
                     const VectorType  *velocity_old_in = nullptr);
 
     void
-    register_laser_intensity_function_and_direction(
-      std::shared_ptr<const dealii::Function<dim, number>> laser_intensity_profile_in,
-      const dealii::Tensor<1, dim, number>                &laser_direction_in);
+    register_interface_heat_flux(
+      std::shared_ptr<const InterfaceHeatFlux<dim, number>> interface_heat_flux_in);
 
     void
     reinit() final;

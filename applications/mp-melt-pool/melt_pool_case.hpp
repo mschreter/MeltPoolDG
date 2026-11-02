@@ -169,8 +169,7 @@ namespace MeltPoolDG
       heat.post(base.fe, base.verbosity_level);
       laser.post(base.dimension,
                  heat.diffuse.use_volume_specific_thermal_capacity_for_phase_interpolation,
-                 material,
-                 heat.operator_type == Heat::TwoPhaseOperatorType::cut);
+                 material);
       rte.post(base.fe, base.verbosity_level);
       ls.post(base.fe, base.verbosity_level);
       evapor.post(material,

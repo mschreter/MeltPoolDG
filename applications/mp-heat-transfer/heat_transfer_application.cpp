@@ -27,6 +27,8 @@
 #include <meltpooldg/heat/heat_data.hpp>
 #include <meltpooldg/heat/heat_diffuse_operation.hpp>
 #include <meltpooldg/heat/laser_data.hpp>
+#include <meltpooldg/heat/laser_heat_source_factory.hpp>
+#include <meltpooldg/heat/laser_interface_heat_flux.hpp>
 #include <meltpooldg/utilities/constraints.hpp>
 #include <meltpooldg/utilities/fe_util.hpp>
 #include <meltpooldg/utilities/journal.hpp>
@@ -73,8 +75,7 @@ namespace MeltPoolDG::Heat
               compute_field_vector(level_set, level_set_dof_idx, *level_set_field_function);
 
             // heat source
-            // zero out
-            heat_operation->get_heat_source() = 0;
+            heat_operation->reset_heat_sources();
             // add custom source field if given
             if (const auto source_field_function = simulation_case->get_field_function(
                   "prescribed_heat_source", "heat_transfer", true /*is_optional*/))
@@ -82,25 +83,13 @@ namespace MeltPoolDG::Heat
                                    heat_continuous_no_bc_dof_idx,
                                    *source_field_function);
             // add laser heat source if given
-            if (laser_operation)
+            if (laser_beam)
               {
-                laser_operation->move_laser(dt);
-
-                // only precompute the laser heat source if it's not passed to the CutFEM Operator
-                if (simulation_case->parameters.heat.operator_type != TwoPhaseOperatorType::cut)
-                  {
-                    auto heat_diffuse_operation =
-                      dynamic_cast<HeatDiffuseOperation<dim, number> *>(heat_operation.get());
-                    Assert(heat_diffuse_operation != nullptr, dealii::ExcInternalError());
-                    laser_operation->compute_heat_source(heat_diffuse_operation->get_heat_source(),
-                                                         heat_diffuse_operation->get_user_rhs(),
-                                                         level_set_as_heaviside,
-                                                         level_set_dof_idx,
-                                                         heat_continuous_no_bc_dof_idx,
-                                                         heat_quad_idx,
-                                                         false /* zero_out */);
-                  }
+                laser_beam->advance(dt);
+                laser_beam->print(scratch_data->get_pcout(1));
               }
+            if (laser_heat_source)
+              laser_heat_source->apply();
 
             Journal::print_formatted_norm<number>(
               scratch_data->get_pcout(2),
@@ -171,20 +160,12 @@ namespace MeltPoolDG::Heat
 
     time_iterator = std::make_shared<TimeIntegration::TimeIterator<number>>(param.time_stepping);
 
+    // initialize the laser beam
     if (param.laser.power > 0.0)
       {
-        laser_operation = std::make_shared<LaserOperation<dim, number>>(
-          *scratch_data,
-          simulation_case->get_periodic_bc(),
-          param.laser,
-          &level_set_as_heaviside,
-          level_set_dof_idx,
-          &param.rad_trans,
-          param.heat.operator_type != TwoPhaseOperatorType::cut,
-          param.material.two_phase_fluid_properties_transition_type !=
-            TwoPhaseFluidPropertiesTransitionType::sharp,
-          param.output.paraview.print_boundary_id);
-        laser_operation->reset(param.time_stepping.start_time);
+        laser_beam = std::make_shared<LaserBeam<dim, number>>(param.laser);
+        laser_beam->reset(param.time_stepping.start_time);
+        laser_beam->print(scratch_data->get_pcout(1));
       }
 
     // set velocity field
@@ -249,6 +230,30 @@ namespace MeltPoolDG::Heat
                 heat_diffuse_operation->register_evaporative_mass_flux(nullptr, 0, param.evapor);
               }
             heat_operation = heat_diffuse_operation;
+
+            if (laser_beam)
+              {
+                LaserCouplingData<dim, number> laser_coupling;
+                laser_coupling.heat_no_bc_dof_idx     = heat_no_bc_dof_idx;
+                laser_coupling.heat_quad_idx          = heat_quad_idx;
+                laser_coupling.level_set_as_heaviside = &level_set_as_heaviside;
+                laser_coupling.level_set_dof_idx      = level_set_dof_idx;
+                laser_coupling.variable_properties_over_interface =
+                  param.material.two_phase_fluid_properties_transition_type !=
+                  TwoPhaseFluidPropertiesTransitionType::sharp;
+                laser_coupling.rte_data = &param.rad_trans;
+                laser_coupling.rte_inflow_boundary_ids =
+                  simulation_case->get_boundary_condition_manager("intensity")
+                    ->get_indices_of_type("laser_inflow");
+                laser_coupling.print_boundary_ids = param.output.paraview.print_boundary_id;
+
+                laser_heat_source = create_laser_heat_source(*scratch_data,
+                                                             simulation_case->get_periodic_bc(),
+                                                             param.laser,
+                                                             *laser_beam,
+                                                             laser_coupling,
+                                                             *heat_diffuse_operation);
+              }
             break;
           }
           case TwoPhaseOperatorType::cut: {
@@ -278,10 +283,9 @@ namespace MeltPoolDG::Heat
               velocity_ptr,
               velocity_old_ptr);
 
-            if (laser_operation)
-              heat_cut_operation->register_laser_intensity_function_and_direction(
-                laser_operation->get_intensity_profile(),
-                param.laser.template get_beam_direction<dim>());
+            if (laser_beam)
+              heat_cut_operation->register_interface_heat_flux(
+                std::make_shared<LaserInterfaceHeatFlux<dim, number>>(param.laser, *laser_beam));
 
             heat_cut_operation->register_lambdas_for_solution_transfer(
               [this]() {
@@ -429,8 +433,8 @@ namespace MeltPoolDG::Heat
               vectors.reserve(1);
               vectors.push_back(&velocity_hist.get_recent_old_solution());
             });
-          if (laser_operation)
-            laser_operation->attach_vectors(data);
+          if (laser_heat_source)
+            laser_heat_source->attach_vectors(data);
         };
 
         amr_post = [this] {
@@ -446,8 +450,8 @@ namespace MeltPoolDG::Heat
                                  *heaviside_field_function);
           if (level_set_field_function)
             compute_field_vector(level_set, level_set_dof_idx, *level_set_field_function);
-          if (laser_operation)
-            laser_operation->distribute_constraints();
+          if (laser_heat_source)
+            laser_heat_source->distribute_constraints();
         };
       }
 
@@ -491,8 +495,8 @@ namespace MeltPoolDG::Heat
 
     FiniteElementUtils::distribute_dofs<dim, dim>(simulation_case->parameters.base.fe,
                                                   dof_handler_velocity);
-    if (laser_operation)
-      laser_operation->distribute_dofs(simulation_case->parameters.heat.fe);
+    if (laser_heat_source)
+      laser_heat_source->distribute_dofs(simulation_case->parameters.heat.fe);
 
     scratch_data->create_partitioning();
 
@@ -505,16 +509,13 @@ namespace MeltPoolDG::Heat
 
     heat_operation->setup_constraints(*scratch_data);
 
-    if (laser_operation)
-      laser_operation->setup_constraints();
+    if (laser_heat_source)
+      laser_heat_source->setup_constraints();
 
     {
       const bool enable_inner_face_loops =
         simulation_case->parameters.heat.operator_type == TwoPhaseOperatorType::cut or
-        (laser_operation and
-         (simulation_case->parameters.laser.model ==
-            LaserModelType::interface_projection_sharp_conforming or
-          simulation_case->parameters.heat.operator_type == TwoPhaseOperatorType::cut));
+        (laser_heat_source and laser_heat_source->requires_inner_face_loops());
       const bool enable_normal_vector_update =
         simulation_case->parameters.heat.operator_type == TwoPhaseOperatorType::cut;
 
@@ -527,8 +528,8 @@ namespace MeltPoolDG::Heat
     if (velocity_hist.size() > 1)
       velocity_hist.apply_old(
         [this](VectorType &vec) { scratch_data->initialize_dof_vector(vec, velocity_dof_idx); });
-    if (laser_operation)
-      laser_operation->reinit();
+    if (laser_heat_source)
+      laser_heat_source->reinit();
   }
 
   template <int dim, typename number>
@@ -591,8 +592,8 @@ namespace MeltPoolDG::Heat
     if (level_set_field_function)
       data_out.add_data_vector(dof_handler_level_set, level_set, "level_set");
 
-    if (laser_operation)
-      laser_operation->attach_output_vectors(data_out);
+    if (laser_heat_source)
+      laser_heat_source->attach_output_vectors(data_out);
   }
 
   template <int dim, typename number>
